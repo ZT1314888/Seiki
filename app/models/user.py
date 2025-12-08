@@ -16,6 +16,11 @@ class User(BaseModel):
     hashed_password = Column(String(255))
     first_name = Column(String(100), nullable=True)
     last_name = Column(String(100), nullable=True)
+    # Seiki-specific profile fields
+    phone = Column(String(50), nullable=True)
+    company_name = Column(String(255), nullable=True)
+    organization_type = Column(String(50), nullable=True)
+    role = Column(String(50), nullable=True)
     avatar = Column(String(255), nullable=True)
     gender = Column(String(50), nullable=True)
     is_active = Column(Boolean, default=False)

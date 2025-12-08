@@ -23,6 +23,16 @@ CLIENT_ROUTES = [
         tags=["client-demo"]
     ),
     RouteConfig(
+        module_path="app.api.client.v1.auth",
+        prefix=f"{settings.API_V1_STR}/auth",
+        tags=["client-auth"]
+    ),
+    RouteConfig(
+        module_path="app.api.client.v1.invitation",
+        prefix=f"{settings.API_V1_STR}/invitations",
+        tags=["client-invitation"]
+    ),
+    RouteConfig(
         module_path="app.api.client.v1.config",
         prefix=f"{settings.API_V1_STR}/config",
         tags=["client-config"]
@@ -31,6 +41,11 @@ CLIENT_ROUTES = [
         module_path="app.api.client.v1.aws",
         prefix=f"{settings.API_V1_STR}/aws",
         tags=["client-aws"]
+    ),
+    RouteConfig(
+        module_path="app.api.client.v1.inventory",
+        prefix=f"{settings.API_V1_STR}/inventory",
+        tags=["client-inventory"]
     ),
 ]
 

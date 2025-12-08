@@ -3,6 +3,7 @@ import os
 import logging
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Union
+from datetime import datetime
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -31,8 +32,9 @@ mail_conf = ConnectionConfig(
 # Initialize FastMail
 fastmail = FastMail(mail_conf)
 
-# Set template directory
-TEMPLATES_DIR = Path(__file__).parent.parent.parent.parent / "resources" / "emails"
+# Set template directory inside the app package so that dev Docker bind mount can see changes
+# /app/app/services/common/email.py -> /app/app/resources/emails
+TEMPLATES_DIR = Path(__file__).parent.parent.parent / "resources" / "emails"
 if not TEMPLATES_DIR.exists():
     TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -189,6 +191,36 @@ class EmailService:
                 "code": verification_code
             },
             subject="Bienvenue chez Moriarty - Activez votre compte"
+        )
+
+    @classmethod
+    async def send_invitation_email(
+        cls,
+        invitee_email: str,
+        inviter_name: str,
+        company_name: str,
+        role_label: str,
+        expires_at: datetime,
+        ttl_days: int,
+        support_email: str,
+    ) -> bool:
+        """Send invitation email with activation link."""
+
+        formatted_expiry = expires_at.strftime("%B %d, %Y")
+        return await cls.send_with_template(
+            to_emails=invitee_email,
+            template_name="invitations/invite.html",
+            template_params={
+                "invitee_email": invitee_email,
+                "inviter_name": inviter_name,
+                "company_name": company_name,
+                "role_label": role_label,
+                "expires_at": formatted_expiry,
+                "ttl_days": ttl_days,
+                "support_email": support_email,
+                "current_year": datetime.now().year,
+            },
+            subject=f"You are invited to join {company_name or 'Seiki'} on Seiki",
         )
 
 # Export instance for convenience

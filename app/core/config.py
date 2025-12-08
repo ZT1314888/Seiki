@@ -68,6 +68,11 @@ class Settings(BaseSettings):
     AWS_BUCKET_NAME: str = "your-bucket-name"
     AWS_ENDPOINT: str = "https://s3.amazonaws.com"
 
+    # KPI / Billboard measurement configuration (Seiki-specific)
+    # These will be populated from env vars BILLBOARD_MEASUREMENT_BASE_URL and BILLBOARD_MEASUREMENT_API_KEY
+    billboard_measurement_base_url: str = ""
+    billboard_measurement_api_key: str = ""
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"  # Optional, specify encoding

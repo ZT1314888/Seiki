@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Seiki Invitation</title>
+  </head>
+  <body style="margin:0;padding:0;background-color:#f4f6fb;font-family:'Segoe UI',Arial,sans-serif;color:#1f2a44;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f6fb;padding:30px 0;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="640" cellpadding="0" cellspacing="0" style="width:640px;max-width:640px;background-color:#ffffff;border-radius:12px;box-shadow:0 8px 24px rgba(9,27,71,0.08);overflow:hidden;">
+            <tr>
+              <td style="background:linear-gradient(135deg,#0f1c46 0%,#192b63 100%);padding:32px 40px;">
+                <img src="https://res.cloudinary.com/dzaicqbce/image/upload/v1733633941/seiki-logo.png" alt="Seiki" style="height:32px;display:block;" />
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:32px 40px 24px;">
+                <p style="margin:0 0 16px;font-size:18px;line-height:1.6;color:#0f1c46;">You are invited to join <strong>{{ company_name }}</strong> on Seiki</p>
+                <p style="margin:0 0 16px;line-height:1.6;">Hello {{ invitee_email }},</p>
+                <p style="margin:0 0 16px;line-height:1.6;">
+                  You have been invited by {{ inviter_name }} to join the organization
+                  <strong>{{ company_name }}</strong> on Seiki as a
+                  <strong>{{ role_label }}</strong>. To accept this invitation, please click the button below.
+                </p>
+                <p style="text-align:center;margin:0 0 24px;color:#1877f2;font-weight:600;">Activate my account now</p>
+                <p style="margin:0 0 16px;line-height:1.6;">
+                  This invitation will expire on <strong>{{ expires_at }}</strong> ({{ ttl_days }} days from now).
+                  If you did not expect this invitation, you can safely ignore this message. The link will automatically become invalid after expiry.
+                </p>
+                <p style="margin:0 0 16px;line-height:1.6;">
+                  For assistance, please contact Seiki Support at
+                  <a href="mailto:{{ support_email }}" style="color:#19a5c0;text-decoration:none;">{{ support_email }}</a>.
+                </p>
+                <p style="margin:0 0 16px;line-height:1.6;">Best regards,<br />The Seiki Team</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:24px 40px 32px;background-color:#f4f6fb;font-size:12px;color:#5d647b;">
+                <p style="margin:0;">Copyright © {{ current_year }} Seiki. Tous droits réservés.</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

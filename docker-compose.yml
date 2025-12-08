@@ -14,6 +14,7 @@ services:
       - app-network
     depends_on:
       - redis
+      - postgres
     healthcheck:
       test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:${API_PORT:-8001}/api/v1/config/health')" ]
       interval: 30s
@@ -72,6 +73,26 @@ services:
       timeout: 10s
       retries: 3
 
+  postgres:
+    image: postgres:16-alpine
+    container_name: ${PROJECT_NAME:-folkyn}-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - app-network
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER}" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
   # Nginx反向代理 (默认启用)
   nginx:
     image: nginx:alpine
@@ -113,6 +134,8 @@ services:
 
 volumes:
   redis-data:
+    driver: local
+  postgres-data:
     driver: local
 
 networks:
