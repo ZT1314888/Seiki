@@ -1,4 +1,5 @@
 from datetime import datetime
+from enum import Enum
 
 from pydantic import EmailStr, Field
 
@@ -36,3 +37,22 @@ class RegisterFromInvitationRequest(BaseSchema):
     phone: str = Field(..., min_length=3)
     password: str = Field(..., min_length=8)
     confirm_password: str = Field(..., min_length=8)
+
+
+class CollaboratorType(str, Enum):
+    USER = "user"
+    INVITATION = "invitation"
+
+
+class CollaboratorItem(BaseSchema):
+    id: str
+    email: EmailStr
+    first_name: str | None = None
+    last_name: str | None = None
+    role_type: str | None = None
+    is_active: bool
+    status: str
+    created_at: datetime
+    last_active_at: datetime | None = None
+    expires_at: datetime | None = None
+    type: CollaboratorType

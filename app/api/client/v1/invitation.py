@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, Header
+from typing import Literal
+
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
@@ -47,3 +49,39 @@ async def register_from_invite(
 
     user = await client_invitation_service.register_from_invite(db, payload)
     return ApiResponse.success(data=user)
+
+
+@router.get("/collaborators")
+async def list_users(
+    email: str | None = None,
+    status: Literal["pending", "active", "deactivated"] | None = None,
+    role_type: Literal["owner", "admin", "operator"] | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return users and invitations filtered by email for current owner."""
+
+    collaborators = await client_invitation_service.list_users(
+        db,
+        current_user=current_user,
+        email=email,
+        status=status,
+        role_type=role_type,
+    )
+    return ApiResponse.success(data=collaborators)
+
+
+@router.post("/{invitation_id}/resend")
+async def resend_invitation(
+    invitation_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Resend invitation email by user ID for current owner."""
+
+    await client_invitation_service.resend_invitation(
+        db,
+        current_user=current_user,
+        invitation_id=invitation_id,
+    )
+    return ApiResponse.success_without_data()

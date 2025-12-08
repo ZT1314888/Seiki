@@ -16,11 +16,15 @@ from app.schemas.client.invitation import (
     InviteUserRequest,
     InvitationInfoResponse,
     RegisterFromInvitationRequest,
+    CollaboratorItem,
+    CollaboratorType,
 )
 from app.services.common.email import email_service
 
 
 INVITATION_TTL_DAYS = 7
+COLLABORATOR_STATUSES = {"pending", "active", "deactivated"}
+COLLABORATOR_ROLE_TYPES = {"owner", "admin", "operator"}
 
 
 class ClientInvitationService:
@@ -209,6 +213,139 @@ class ClientInvitationService:
             phone=user.phone,
             company_name=user.company_name,
             organization_type=org_type_enum,
+        )
+
+    @staticmethod
+    async def list_users(
+        db: AsyncSession,
+        current_user: User,
+        email: str | None = None,
+        status: str | None = None,
+        role_type: str | None = None,
+    ) -> list[CollaboratorItem]:
+        if status and status not in COLLABORATOR_STATUSES:
+            raise APIException(status_code=400, message="Invalid status filter")
+
+        if role_type:
+            normalized_role_type = role_type.lower()
+            if normalized_role_type not in COLLABORATOR_ROLE_TYPES:
+                raise APIException(status_code=400, message="Invalid role_type filter")
+            role_type = normalized_role_type
+
+        user_query = select(User).where(User.id != current_user.id)
+        invitation_query = select(Invitation).where(Invitation.inviter_user_id == current_user.id)
+
+        if current_user.company_name:
+            user_query = user_query.where(User.company_name == current_user.company_name)
+        if current_user.organization_type:
+            user_query = user_query.where(User.organization_type == current_user.organization_type)
+
+        if status == "active":
+            user_query = user_query.where(User.is_active.is_(True))
+            invitation_query = None
+        elif status == "deactivated":
+            user_query = user_query.where(User.is_active.is_(False))
+            invitation_query = invitation_query.where(Invitation.is_used.is_(True))
+        elif status == "pending":
+            user_query = None
+            invitation_query = invitation_query.where(Invitation.is_used.is_(False))
+
+        if email:
+            like_value = f"%{email}%"
+            if user_query is not None:
+                user_query = user_query.where(User.email.ilike(like_value))
+            if invitation_query is not None:
+                invitation_query = invitation_query.where(Invitation.email.ilike(like_value))
+
+        if role_type:
+            if user_query is not None:
+                user_query = user_query.where(User.role == role_type)
+            if invitation_query is not None and role_type != "owner":
+                invitation_query = invitation_query.where(Invitation.role == role_type)
+            if invitation_query is not None and role_type == "owner":
+                invitation_query = None
+
+        user_rows: list[User] = []
+        invitation_rows: list[Invitation] = []
+
+        if user_query is not None:
+            user_result = await db.execute(user_query)
+            user_rows = user_result.scalars().all()
+
+        if invitation_query is not None:
+            invitation_result = await db.execute(invitation_query)
+            invitation_rows = invitation_result.scalars().all()
+
+        collaborators: list[CollaboratorItem] = []
+
+        for user in user_rows:
+            collaborators.append(
+                CollaboratorItem(
+                    id=str(user.id),
+                    email=user.email,
+                    first_name=user.first_name,
+                    last_name=user.last_name,
+                    role_type=user.role,
+                    is_active=bool(user.is_active),
+                    status="active" if user.is_active else "deactivated",
+                    created_at=user.created_at,
+                    last_active_at=user.last_active_at,
+                    type=CollaboratorType.USER,
+                )
+            )
+
+        for invitation in invitation_rows:
+            collaborators.append(
+                CollaboratorItem(
+                    id=str(invitation.id),
+                    email=invitation.email,
+                    first_name=None,
+                    last_name=None,
+                    role_type=invitation.role,
+                    is_active=False,
+                    status="pending" if not invitation.is_used else "deactivated",
+                    created_at=invitation.created_at,
+                    expires_at=invitation.expires_at,
+                    type=CollaboratorType.INVITATION,
+                )
+            )
+
+        return collaborators
+
+    @staticmethod
+    async def resend_invitation(
+        db: AsyncSession,
+        current_user: User,
+        invitation_id: int,
+    ) -> None:
+        result = await db.execute(
+            select(Invitation).where(
+                Invitation.id == invitation_id,
+                Invitation.inviter_user_id == current_user.id,
+            )
+        )
+        invitation = result.scalar_one_or_none()
+        if invitation is None:
+            raise APIException(status_code=404, message="Invitation not found")
+
+        if invitation.is_used:
+            raise APIException(status_code=400, message="Invitation already used")
+        if invitation.expires_at <= datetime.now(UTC):
+            raise APIException(status_code=400, message="Invitation already expired")
+
+        inviter_name = " ".join(
+            [name for name in [current_user.first_name, current_user.last_name] if name]
+        ).strip() or current_user.email
+        role_label = "Administrator" if invitation.role == "admin" else "Operator"
+
+        await email_service.send_invitation_email(
+            invitee_email=invitation.email,
+            inviter_name=inviter_name,
+            company_name=current_user.company_name or "",
+            role_label=role_label,
+            expires_at=invitation.expires_at,
+            ttl_days=INVITATION_TTL_DAYS,
+            support_email=settings.ADMIN_EMAIL,
         )
 
 
