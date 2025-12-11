@@ -34,7 +34,7 @@ class RegisterFromInvitationRequest(BaseSchema):
     company_name: str | None = None
     first_name: str = Field(..., min_length=1)
     last_name: str = Field(..., min_length=1)
-    phone: str = Field(..., min_length=3)
+    phone: str = Field(..., min_length=1)
     password: str = Field(..., min_length=8)
     confirm_password: str = Field(..., min_length=8)
 
@@ -45,7 +45,8 @@ class CollaboratorType(str, Enum):
 
 
 class CollaboratorItem(BaseSchema):
-    id: str
+    id: int
+    unique_key: str
     email: EmailStr
     first_name: str | None = None
     last_name: str | None = None

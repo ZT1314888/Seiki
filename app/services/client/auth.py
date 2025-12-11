@@ -10,6 +10,7 @@ from app.db.session import transaction
 from app.exceptions.http_exceptions import APIException
 from app.models.user import User
 from app.models.token import Token
+from app.models.organization import Organization
 from app.schemas.client.auth import (
     RegisterRequest,
     UserResponse,
@@ -53,7 +54,24 @@ class ClientAuthService(AuthBase):
 
             hashed_password = User.get_password_hash(payload.password)
 
+            organization: Organization | None = None
+            organization_id: int | None = user.organization_id if user else None
+
+            if organization_id is not None:
+                organization_result = await db.execute(
+                    select(Organization).where(Organization.id == organization_id)
+                )
+                organization = organization_result.scalar_one_or_none()
+
             if user is None:
+                if organization is None:
+                    organization = Organization(
+                        name=payload.company_name,
+                        organization_type=payload.organization_type.value,
+                    )
+                    db.add(organization)
+                    await db.flush()
+                organization_id = organization.id
                 user = User(
                     email=payload.email,
                     hashed_password=hashed_password,
@@ -64,6 +82,7 @@ class ClientAuthService(AuthBase):
                     phone=payload.phone,
                     company_name=payload.company_name,
                     organization_type=payload.organization_type.value,
+                    organization_id=organization_id,
                     role="owner",
                 )
                 db.add(user)
@@ -78,8 +97,24 @@ class ClientAuthService(AuthBase):
                 user.is_active = False
                 user.is_verified = False
                 user.role = "owner"
+                if organization is None:
+                    organization = Organization(
+                        name=payload.company_name,
+                        organization_type=payload.organization_type.value,
+                    )
+                    db.add(organization)
+                    await db.flush()
+                    organization_id = organization.id
+                    user.organization_id = organization_id
 
             await db.flush()
+            await ClientAuthService._upsert_owner_organization(
+                db=db,
+                organization_id=organization_id,
+                owner_user_id=user.id,
+                organization_type=payload.organization_type.value,
+                company_name=payload.company_name,
+            )
 
         # Generate verification code and send email (after DB transaction commits)
         verification_code = f"{secrets.randbelow(1_000_000):06d}"
@@ -125,7 +160,42 @@ class ClientAuthService(AuthBase):
         await redis_client.delete(redis_key)
 
     @staticmethod
-    async def logout(db: AsyncSession, payload: LogoutRequest) -> None:
+    async def _upsert_owner_organization(
+        db: AsyncSession,
+        organization_id: int | None,
+        owner_user_id: int,
+        organization_type: str | None,
+        company_name: str | None,
+    ) -> None:
+        if organization_id is None:
+            raise APIException(status_code=500, message="Organization id is required")
+
+        result = await db.execute(
+            select(Organization).where(Organization.id == organization_id)
+        )
+        organization = result.scalar_one_or_none()
+
+        if organization is None:
+            organization = Organization(
+                id=organization_id,
+                name=company_name,
+                organization_type=organization_type,
+                owner_user_id=owner_user_id,
+            )
+            db.add(organization)
+        else:
+            organization.name = company_name
+            organization.organization_type = organization_type
+            organization.owner_user_id = owner_user_id
+
+        await db.flush()
+
+    @staticmethod
+    async def logout(
+        db: AsyncSession,
+        payload: LogoutRequest,
+        current_user: User,
+    ) -> None:
         """Invalidate the current refresh token for the user."""
 
         payload_data = AuthBase.verify_token(payload.refresh_token, scope="refresh")
@@ -135,10 +205,12 @@ class ClientAuthService(AuthBase):
         user_id = payload_data.get("sub")
         if user_id is None:
             raise APIException(status_code=401, message="Invalid refresh token payload")
+        if int(user_id) != current_user.id:
+            raise APIException(status_code=401, message="Refresh token does not belong to user")
 
         result = await db.execute(
             select(Token).where(
-                (Token.user_id == int(user_id)) & (Token.is_active == True)
+                (Token.user_id == current_user.id) & (Token.is_active == True)
             )
         )
         stored_token = result.scalar_one_or_none()
@@ -240,18 +312,27 @@ class ClientAuthService(AuthBase):
         refresh_token = AuthBase.create_refresh_token(subject=str(user.id))
 
         async with transaction(db):
-            await db.execute(
-                update(Token)
-                .where((Token.user_id == user.id) & (Token.is_active == True))
-                .values(is_active=False)
+            result = await db.execute(
+                select(Token).where(
+                    (Token.user_id == user.id) & (Token.is_active == True)
+                )
             )
+            active_token = result.scalar_one_or_none()
+
+            now_utc = datetime.now(UTC)
+            if active_token:
+                if active_token.expires_at > now_utc:
+                    raise APIException(
+                        status_code=400,
+                        message="User already logged in. Please log out before logging in again.",
+                    )
+                active_token.is_active = False
 
             hashed_token = AuthBase.hash_token(refresh_token)
             token_entry = Token(
                 user_id=user.id,
                 token=hashed_token,
-                expires_at=datetime.now(UTC)
-                + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
+                expires_at=now_utc + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
                 is_active=True,
             )
             db.add(token_entry)
@@ -291,17 +372,11 @@ class ClientAuthService(AuthBase):
         new_refresh_token = AuthBase.create_refresh_token(subject=str(user.id))
 
         async with transaction(db):
-            stored_token.is_active = False
-
             hashed_token = AuthBase.hash_token(new_refresh_token)
-            new_token_entry = Token(
-                user_id=user.id,
-                token=hashed_token,
-                expires_at=datetime.now(UTC)
-                + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
-                is_active=True,
-            )
-            db.add(new_token_entry)
+            stored_token.token = hashed_token
+            stored_token.expires_at = datetime.now(UTC) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+            stored_token.is_active = True
+            stored_token.last_used_at = datetime.now(UTC)
             await db.flush()
 
         return TokenResponse(

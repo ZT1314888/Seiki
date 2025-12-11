@@ -1,12 +1,13 @@
 # 开发环境专用配置
 # 使用方式: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up -d
-
 services:
   app:
     build:
       context: .
       dockerfile: Dockerfile.dev
     image: ${PROJECT_NAME:-app}:dev
+    env_file:
+      - .env
     ports:
       - "${API_PORT:-8001}:${API_PORT:-8001}"
     environment:
@@ -14,10 +15,13 @@ services:
     volumes:
       - ./app:/app/app
       - ./logs:/app/logs
+      - ./migrations:/app/migrations
 
   # Celery Worker - 复用开发环境镜像
   celery-worker:
     image: ${PROJECT_NAME:-app}:dev
+    env_file:
+      - .env
     environment:
       - ENV=development
     volumes:
@@ -29,12 +33,16 @@ services:
   # Celery Beat - 复用开发环境镜像
   celery-beat:
     image: ${PROJECT_NAME:-app}:dev
+    env_file:
+      - .env
     depends_on:
       - app  # 确保先构建 app
 
   # Flower - 复用开发环境镜像
   flower:
     image: ${PROJECT_NAME:-app}:dev
+    env_file:
+      - .env
     depends_on:
       - app  # 确保先构建 app
       

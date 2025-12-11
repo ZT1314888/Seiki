@@ -1,10 +1,13 @@
-from fastapi import Depends, HTTPException, status, Header
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import Depends, Header, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select
-from app.db.session import get_db
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.security import AuthBase
+from app.db.session import get_db
 from app.models.user import User
+from app.repositories.inventory import InventoryRepository
+from app.services.client.inventory_csv import BillboardCSVService
 
 http_bearer_scheme = HTTPBearer(auto_error=True)
 
@@ -30,6 +33,19 @@ async def get_current_user(
     if not user.is_active:
         raise HTTPException(status_code=401, detail="Inactive user")
     return user
+
+
+async def get_inventory_repository(
+    db: AsyncSession = Depends(get_db),
+) -> InventoryRepository:
+    return InventoryRepository(db)
+
+
+async def get_billboard_csv_service(
+    repository: InventoryRepository = Depends(get_inventory_repository),
+    db: AsyncSession = Depends(get_db),
+) -> BillboardCSVService:
+    return BillboardCSVService(repository=repository, db=db)
 
 
 async def get_current_client_user(

@@ -47,6 +47,11 @@ CLIENT_ROUTES = [
         prefix=f"{settings.API_V1_STR}/inventory",
         tags=["client-inventory"]
     ),
+    RouteConfig(
+        module_path="app.api.client.v1.campaigns",
+        prefix=f"{settings.API_V1_STR}/campaigns",
+        tags=["client-campaigns"]
+    ),
 ]
 
 # Backoffice route configuration

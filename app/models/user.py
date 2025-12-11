@@ -13,6 +13,7 @@ class User(BaseModel):
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     email = Column(String(255), unique=True, index=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False, index=True)
     hashed_password = Column(String(255))
     first_name = Column(String(100), nullable=True)
     last_name = Column(String(100), nullable=True)

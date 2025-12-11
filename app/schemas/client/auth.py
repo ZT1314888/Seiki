@@ -23,7 +23,7 @@ class RegisterRequest(BaseSchema):
     first_name: str = Field(..., min_length=1)
     last_name: str = Field(..., min_length=1)
     email: EmailStr
-    phone: str = Field(..., min_length=3)
+    phone: str = Field(..., min_length=1)
     organization_type: OrganizationType
     company_name: str = Field(..., min_length=1)
     password: str = Field(..., min_length=8)

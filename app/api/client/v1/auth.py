@@ -75,10 +75,11 @@ async def refresh_token(
 async def logout(
     payload: LogoutRequest,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Sign out the user by invalidating current refresh token."""
 
-    await client_auth_service.logout(db, payload)
+    await client_auth_service.logout(db, payload, current_user)
     return ApiResponse.success()
 
 

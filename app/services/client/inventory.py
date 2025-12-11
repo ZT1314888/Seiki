@@ -2,7 +2,7 @@ from collections import defaultdict
 from math import ceil
 from typing import Dict, List
 
-from sqlalchemy import select, func, or_
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import transaction
@@ -13,10 +13,11 @@ from app.schemas.client.inventory import (
     FaceCreateRequest,
     FaceResponse,
     FaceUpdateRequest,
-    InventoryTreeResponse,
-    InventoryTreeNode,
     InventoryNodeType,
+    InventoryTreeNode,
+    InventoryTreeResponse,
 )
+from app.utils.h3_helpers import latlng_to_h3
 
 
 class ClientInventoryService:
@@ -24,19 +25,25 @@ class ClientInventoryService:
     async def create_face(
         db: AsyncSession,
         payload: FaceCreateRequest,
-        current_user: User | None = None,
+        current_user: User,
     ) -> FaceResponse:
-        existing_query = select(InventoryFace).where(InventoryFace.face_id == payload.face_id)
+        existing_query = select(InventoryFace).where(
+            InventoryFace.face_id == payload.face_id,
+            InventoryFace.organization_id == current_user.organization_id,
+        )
         result = await db.execute(existing_query)
         if result.scalar_one_or_none() is not None:
             raise APIException(status_code=400, message="Face ID already exists")
 
         async with transaction(db):
+            h3_index = latlng_to_h3(payload.latitude, payload.longitude)
             face = InventoryFace(
                 face_id=payload.face_id,
-                billboard_type=payload.billboard_type,
+                billboard_type=payload.billboard_type.value,
+                billboard_type_source=payload.billboard_type_source.value,
                 latitude=payload.latitude,
                 longitude=payload.longitude,
+                h3_index=h3_index,
                 height_from_ground=payload.height_from_ground,
                 loop_timing=payload.loop_timing,
                 address=payload.address,
@@ -47,6 +54,10 @@ class ClientInventoryService:
                 media_owner_name=payload.media_owner_name,
                 network_name=payload.network_name,
                 status=payload.status.value,
+                avg_daily_gross_contacts=payload.avg_daily_gross_contacts,
+                daily_frequency=payload.daily_frequency,
+                user_id=current_user.id,
+                organization_id=current_user.organization_id,
             )
             db.add(face)
             await db.flush()
@@ -57,11 +68,14 @@ class ClientInventoryService:
     @staticmethod
     async def delete_face(
         db: AsyncSession,
-        face_id: int,
-        current_user: User | None = None,
+        face_id: str,
+        current_user: User,
     ) -> None:
         result = await db.execute(
-            select(InventoryFace).where(InventoryFace.id == face_id)
+            select(InventoryFace).where(
+                InventoryFace.face_id == face_id,
+                InventoryFace.organization_id == current_user.organization_id,
+            )
         )
         face = result.scalar_one_or_none()
         if face is None:
@@ -74,12 +88,15 @@ class ClientInventoryService:
     @staticmethod
     async def update_face(
         db: AsyncSession,
-        face_id: int,
+        face_id: str,
         payload: FaceUpdateRequest,
-        current_user: User | None = None,
+        current_user: User,
     ) -> FaceResponse:
         result = await db.execute(
-            select(InventoryFace).where(InventoryFace.id == face_id)
+            select(InventoryFace).where(
+                InventoryFace.face_id == face_id,
+                InventoryFace.organization_id == current_user.organization_id,
+            )
         )
         face = result.scalar_one_or_none()
         if face is None:
@@ -87,8 +104,10 @@ class ClientInventoryService:
 
         async with transaction(db):
             face.billboard_type = payload.billboard_type.value
+            face.billboard_type_source = payload.billboard_type_source.value
             face.latitude = payload.latitude
             face.longitude = payload.longitude
+            face.h3_index = latlng_to_h3(payload.latitude, payload.longitude)
             face.height_from_ground = payload.height_from_ground
             face.loop_timing = payload.loop_timing
             face.address = payload.address
@@ -98,6 +117,8 @@ class ClientInventoryService:
             face.height = payload.height
             face.network_name = payload.network_name
             face.status = payload.status.value
+            face.avg_daily_gross_contacts = payload.avg_daily_gross_contacts
+            face.daily_frequency = payload.daily_frequency
             await db.flush()
             await db.refresh(face)
 
@@ -106,10 +127,14 @@ class ClientInventoryService:
     @staticmethod
     async def get_face(
         db: AsyncSession,
-        face_id: int,
+        face_id: str,
+        current_user: User,
     ) -> FaceResponse:
         result = await db.execute(
-            select(InventoryFace).where(InventoryFace.id == face_id)
+            select(InventoryFace).where(
+                InventoryFace.face_id == face_id,
+                InventoryFace.organization_id == current_user.organization_id,
+            )
         )
         face = result.scalar_one_or_none()
         if face is None:
@@ -118,8 +143,13 @@ class ClientInventoryService:
         return FaceResponse.model_validate(face)
 
     @staticmethod
-    async def get_inventory_tree(db: AsyncSession) -> InventoryTreeResponse:
-        result = await db.execute(select(InventoryFace))
+    async def get_inventory_tree(
+        db: AsyncSession,
+        current_user: User,
+    ) -> InventoryTreeResponse:
+        result = await db.execute(
+            select(InventoryFace).where(InventoryFace.organization_id == current_user.organization_id)
+        )
         faces: List[InventoryFace] = result.scalars().all()
 
         media_owner_groups: Dict[str, List[InventoryFace]] = defaultdict(list)
@@ -187,6 +217,7 @@ class ClientInventoryService:
     @staticmethod
     async def list_faces(
         db: AsyncSession,
+        current_user: User,
         page: int = 1,
         per_page: int = 10,
         media_owner_name: str | None = None,
@@ -199,7 +230,9 @@ class ClientInventoryService:
         if page < 1 or per_page < 1:
             raise APIException(status_code=400, message="Invalid page or per_page parameter")
 
-        query = select(InventoryFace)
+        query = select(InventoryFace).where(
+            InventoryFace.organization_id == current_user.organization_id
+        )
 
         if media_owner_name:
             query = query.where(InventoryFace.media_owner_name == media_owner_name)

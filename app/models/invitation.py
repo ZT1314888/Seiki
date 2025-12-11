@@ -13,6 +13,7 @@ class Invitation(BaseModel):
     company_name = Column(String(255), nullable=True)
     role = Column(String(50), nullable=False)  # "admin" or "operator"
     inviter_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    organization_id = Column(Integer, ForeignKey("organizations.id"), nullable=False, index=True)
     token = Column(String(255), unique=True, nullable=False)  # store hashed invite token
     expires_at = Column(TIMESTAMP(timezone=True), nullable=False)
     used_at = Column(TIMESTAMP(timezone=True), nullable=True)

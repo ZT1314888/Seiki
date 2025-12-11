@@ -2,7 +2,7 @@ import secrets
 import logging
 from datetime import datetime, timedelta, UTC
 
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -56,6 +56,7 @@ class ClientInvitationService:
                 company_name=current_user.company_name,
                 role=payload.role,
                 inviter_user_id=current_user.id,
+                organization_id=current_user.organization_id,
                 token=hashed_token,
                 expires_at=expires_at,
                 is_used=False,
@@ -179,6 +180,7 @@ class ClientInvitationService:
                     phone=payload.phone,
                     company_name=invitation.company_name,
                     organization_type=invitation.organization_type,
+                    organization_id=invitation.organization_id,
                     role=invitation.role,
                     is_active=True,
                     is_verified=True,
@@ -191,6 +193,7 @@ class ClientInvitationService:
                 user.phone = payload.phone
                 user.company_name = invitation.company_name
                 user.organization_type = invitation.organization_type
+                user.organization_id = invitation.organization_id
                 user.role = invitation.role
                 user.is_active = True
                 user.is_verified = True
@@ -232,20 +235,22 @@ class ClientInvitationService:
                 raise APIException(status_code=400, message="Invalid role_type filter")
             role_type = normalized_role_type
 
-        user_query = select(User).where(User.id != current_user.id)
-        invitation_query = select(Invitation).where(Invitation.inviter_user_id == current_user.id)
+        organization_id = current_user.organization_id
 
-        if current_user.company_name:
-            user_query = user_query.where(User.company_name == current_user.company_name)
-        if current_user.organization_type:
-            user_query = user_query.where(User.organization_type == current_user.organization_type)
+        user_query = select(User).where(User.organization_id == organization_id)
+        invitation_query = (
+            select(Invitation)
+            .where(Invitation.organization_id == organization_id)
+            .order_by(Invitation.created_at.desc())
+        )
 
         if status == "active":
             user_query = user_query.where(User.is_active.is_(True))
             invitation_query = None
         elif status == "deactivated":
             user_query = user_query.where(User.is_active.is_(False))
-            invitation_query = invitation_query.where(Invitation.is_used.is_(True))
+            if invitation_query is not None:
+                invitation_query = invitation_query.where(Invitation.is_used.is_(True))
         elif status == "pending":
             user_query = None
             invitation_query = invitation_query.where(Invitation.is_used.is_(False))
@@ -260,9 +265,9 @@ class ClientInvitationService:
         if role_type:
             if user_query is not None:
                 user_query = user_query.where(User.role == role_type)
-            if invitation_query is not None and role_type != "owner":
+            if invitation_query is not None:
                 invitation_query = invitation_query.where(Invitation.role == role_type)
-            if invitation_query is not None and role_type == "owner":
+            if role_type == "owner":
                 invitation_query = None
 
         user_rows: list[User] = []
@@ -276,16 +281,19 @@ class ClientInvitationService:
             invitation_result = await db.execute(invitation_query)
             invitation_rows = invitation_result.scalars().all()
 
+        owner_user_ids: set[int] = {user.id for user in user_rows if user.role == "owner"}
+
         collaborators: list[CollaboratorItem] = []
 
         for user in user_rows:
             collaborators.append(
                 CollaboratorItem(
-                    id=str(user.id),
+                    id=user.id,
+                    unique_key=f"user:{user.id}",
                     email=user.email,
                     first_name=user.first_name,
                     last_name=user.last_name,
-                    role_type=user.role,
+                    role_type="owner" if user.id in owner_user_ids else user.role,
                     is_active=bool(user.is_active),
                     status="active" if user.is_active else "deactivated",
                     created_at=user.created_at,
@@ -297,7 +305,8 @@ class ClientInvitationService:
         for invitation in invitation_rows:
             collaborators.append(
                 CollaboratorItem(
-                    id=str(invitation.id),
+                    id=invitation.id,
+                    unique_key=f"invitation:{invitation.id}",
                     email=invitation.email,
                     first_name=None,
                     last_name=None,
@@ -310,7 +319,17 @@ class ClientInvitationService:
                 )
             )
 
-        return collaborators
+        deduped_collaborators: list[CollaboratorItem] = []
+        seen_emails: set[str] = set()
+
+        for collaborator in collaborators:
+            email_key = collaborator.email.lower()
+            if email_key in seen_emails:
+                continue
+            seen_emails.add(email_key)
+            deduped_collaborators.append(collaborator)
+
+        return deduped_collaborators
 
     @staticmethod
     async def resend_invitation(
