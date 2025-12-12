@@ -6,6 +6,7 @@ from .organization import Organization
 from .inventory import InventoryFace
 from .geo import GeoDivision
 from .campaign import Campaign
+from .media_plan import MediaPlan
 
 __all__ = [
     "Admin",
@@ -17,4 +18,5 @@ __all__ = [
     "InventoryFace",
     "GeoDivision",
     "Campaign",
+    "MediaPlan",
 ]

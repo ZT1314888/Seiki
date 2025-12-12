@@ -18,6 +18,8 @@ from app.schemas.client.invitation import (
     RegisterFromInvitationRequest,
     CollaboratorItem,
     CollaboratorType,
+    CollaboratorStatusUpdateRequest,
+    CollaboratorRoleUpdateRequest,
 )
 from app.services.common.email import email_service
 
@@ -238,21 +240,22 @@ class ClientInvitationService:
         organization_id = current_user.organization_id
 
         user_query = select(User).where(User.organization_id == organization_id)
-        invitation_query = (
-            select(Invitation)
-            .where(Invitation.organization_id == organization_id)
-            .order_by(Invitation.created_at.desc())
-        )
+        invitation_query = None
+        if status in (None, "pending"):
+            invitation_query = (
+                select(Invitation)
+                .where(Invitation.organization_id == organization_id)
+                .order_by(Invitation.created_at.desc())
+            )
 
         if status == "active":
             user_query = user_query.where(User.is_active.is_(True))
-            invitation_query = None
         elif status == "deactivated":
             user_query = user_query.where(User.is_active.is_(False))
-            if invitation_query is not None:
-                invitation_query = invitation_query.where(Invitation.is_used.is_(True))
         elif status == "pending":
             user_query = None
+            invitation_query = invitation_query.where(Invitation.is_used.is_(False))
+        elif status is None:
             invitation_query = invitation_query.where(Invitation.is_used.is_(False))
 
         if email:
@@ -302,7 +305,12 @@ class ClientInvitationService:
                 )
             )
 
+        user_email_keys = {user.email.lower(): user for user in user_rows}
+
         for invitation in invitation_rows:
+            invitation_email_key = invitation.email.lower()
+            if invitation_email_key in user_email_keys:
+                continue
             collaborators.append(
                 CollaboratorItem(
                     id=invitation.id,
@@ -319,17 +327,100 @@ class ClientInvitationService:
                 )
             )
 
-        deduped_collaborators: list[CollaboratorItem] = []
-        seen_emails: set[str] = set()
+        preferred_type_rank = {
+            CollaboratorType.USER: 0,
+            CollaboratorType.INVITATION: 1,
+        }
+        collaborator_map: dict[str, CollaboratorItem] = {}
 
         for collaborator in collaborators:
             email_key = collaborator.email.lower()
-            if email_key in seen_emails:
+            existing = collaborator_map.get(email_key)
+            if existing is None:
+                collaborator_map[email_key] = collaborator
                 continue
-            seen_emails.add(email_key)
-            deduped_collaborators.append(collaborator)
+            if preferred_type_rank[collaborator.type] < preferred_type_rank[existing.type]:
+                collaborator_map[email_key] = collaborator
 
-        return deduped_collaborators
+        return list(collaborator_map.values())
+
+    @staticmethod
+    async def update_collaborator_status(
+        db: AsyncSession,
+        current_user: User,
+        collaborator_id: int,
+        payload: CollaboratorStatusUpdateRequest,
+    ) -> CollaboratorItem:
+        if current_user.role not in {"admin", "owner"}:
+            raise APIException(status_code=403, message="Only admin or owner can update collaborator status")
+
+        result = await db.execute(
+            select(User).where(
+                User.id == collaborator_id,
+                User.organization_id == current_user.organization_id,
+            )
+        )
+        collaborator = result.scalar_one_or_none()
+        if collaborator is None:
+            raise APIException(status_code=404, message="Collaborator not found")
+
+        if collaborator.role == "owner":
+            raise APIException(status_code=400, message="Cannot change status of owner")
+
+        desired_active = payload.is_active == "activate"
+        if collaborator.is_active == desired_active:
+            status_text = "active" if desired_active else "deactivated"
+            raise APIException(status_code=400, message=f"Collaborator already {status_text}")
+
+        async with transaction(db):
+            collaborator.is_active = desired_active
+            collaborator.last_active_at = datetime.now(UTC) if desired_active else collaborator.last_active_at
+            await db.flush()
+
+        return CollaboratorItem(
+            id=collaborator.id,
+            unique_key=f"user:{collaborator.id}",
+            email=collaborator.email,
+            first_name=collaborator.first_name,
+            last_name=collaborator.last_name,
+            role_type=collaborator.role,
+            is_active=collaborator.is_active,
+            status="active" if collaborator.is_active else "deactivated",
+            created_at=collaborator.created_at,
+            last_active_at=collaborator.last_active_at,
+            type=CollaboratorType.USER,
+        )
+
+    @staticmethod
+    async def update_collaborator_role(
+        db: AsyncSession,
+        current_user: User,
+        collaborator_id: int,
+        payload: CollaboratorRoleUpdateRequest,
+    ) -> None:
+        if current_user.role not in {"admin", "owner"}:
+            raise APIException(status_code=403, message="Only admin or owner can update collaborator role")
+
+        result = await db.execute(
+            select(User).where(
+                User.id == collaborator_id,
+                User.organization_id == current_user.organization_id,
+            )
+        )
+        collaborator = result.scalar_one_or_none()
+        if collaborator is None:
+            raise APIException(status_code=404, message="Collaborator not found")
+
+        if collaborator.role == "owner":
+            raise APIException(status_code=400, message="Cannot change role of owner")
+
+        desired_role = payload.role_type
+        if collaborator.role == desired_role:
+            raise APIException(status_code=400, message="Collaborator already has this role")
+
+        async with transaction(db):
+            collaborator.role = desired_role
+            await db.flush()
 
     @staticmethod
     async def resend_invitation(

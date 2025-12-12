@@ -1,5 +1,6 @@
 from datetime import datetime
 from enum import Enum
+from typing import Literal
 
 from pydantic import EmailStr, Field
 
@@ -57,3 +58,15 @@ class CollaboratorItem(BaseSchema):
     last_active_at: datetime | None = None
     expires_at: datetime | None = None
     type: CollaboratorType
+
+
+class CollaboratorStatusUpdateRequest(BaseSchema):
+    """Toggle collaborator active/deactivated status."""
+
+    is_active: Literal["activate", "deactivate"]
+
+
+class CollaboratorRoleUpdateRequest(BaseSchema):
+    """Update collaborator role between admin/operator."""
+
+    role_type: Literal["admin", "operator"]

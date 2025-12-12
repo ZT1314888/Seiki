@@ -8,17 +8,23 @@ celery_app = Celery(
     broker=settings.CELERY_BROKER_URL,
     backend=settings.CELERY_RESULT_BACKEND,
     include=[
-        'app.schedule.celery_job',  # Main registry
-        'app.schedule.jobs.demo'    # Add specific job modules here
+        "app.schedule.celery_job",  # Main registry
+        "app.schedule.jobs.demo",
+        "app.schedule.jobs.campaign_status",
     ]
 )
 
 # Configure Celery Beat (for scheduled tasks)
 celery_app.conf.beat_schedule = {
-    'demo-every-minute': {
-        'task': 'app.schedule.jobs.demo.execute',  # Updated to use the new task path
-        'schedule': 60.0,  # Every minute
-        'options': {'queue': 'scheduled_tasks'}
+    "demo-every-minute": {
+        "task": "app.schedule.jobs.demo.execute",
+        "schedule": 60.0,
+        "options": {"queue": "scheduled_tasks"},
+    },
+    "campaign-status-refresh-every-10-min": {
+        "task": "app.schedule.jobs.campaign_status.refresh_statuses",
+        "schedule": 60.0,
+        "options": {"queue": "scheduled_tasks"},
     },
 }
 

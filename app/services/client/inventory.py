@@ -235,9 +235,11 @@ class ClientInventoryService:
         )
 
         if media_owner_name:
-            query = query.where(InventoryFace.media_owner_name == media_owner_name)
+            like_value = f"%{media_owner_name}%"
+            query = query.where(InventoryFace.media_owner_name.ilike(like_value))
         if network_name:
-            query = query.where(InventoryFace.network_name == network_name)
+            like_value = f"%{network_name}%"
+            query = query.where(InventoryFace.network_name.ilike(like_value))
         if face_id:
             query = query.where(InventoryFace.face_id == face_id)
         if billboard_type:

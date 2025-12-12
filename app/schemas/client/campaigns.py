@@ -83,8 +83,9 @@ class CampaignCreateRequest(BaseSchema):
         default_factory=list,
         description="POI categories multi-select",
     )
-    billboard_ids: List[int] = Field(..., min_length=1)
+    billboard_ids: List[int] = Field(default_factory=list)
     inventory_ids: List[str] = Field(..., min_length=1)
+    save_as_draft: bool = Field(default=False, description="When true, campaign is saved as draft")
 
     @field_validator("start_date", "end_date", mode="before")
     @classmethod

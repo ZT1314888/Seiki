@@ -52,6 +52,11 @@ CLIENT_ROUTES = [
         prefix=f"{settings.API_V1_STR}/campaigns",
         tags=["client-campaigns"]
     ),
+    RouteConfig(
+        module_path="app.api.client.v1.media_plans",
+        prefix=f"{settings.API_V1_STR}/media-plans",
+        tags=["client-media-plans"]
+    ),
 ]
 
 # Backoffice route configuration

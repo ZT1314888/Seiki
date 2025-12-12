@@ -1,15 +1,16 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.client.deps import get_current_user
 from app.db.session import get_db
+from app.exceptions.http_exceptions import APIException
+from app.models.user import User
 from app.schemas.client.campaigns import CampaignCreateRequest
 from app.schemas.response import ApiResponse
 from app.services.client.campaigns import campaign_service, geo_filter_service
-from app.models.user import User
-from app.exceptions.http_exceptions import APIException
 
 router = APIRouter()
 
@@ -42,6 +43,45 @@ async def create_campaign(
     )
 
 
+@router.put("/{campaign_id}")
+async def edit_campaign(
+    campaign_id: int,
+    payload: CampaignCreateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role == "operator":
+        raise APIException(status_code=403, message="Operators cannot edit campaigns")
+
+    campaign = await campaign_service.edit_campaign(
+        db=db,
+        campaign_id=campaign_id,
+        payload=payload,
+        current_user=current_user,
+    )
+    return ApiResponse.success(
+        message="Campaign updated successfully",
+        data=campaign,
+    )
+
+
+@router.delete("/{campaign_id}/delete")
+async def delete_campaign(
+    campaign_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role == "operator":
+        raise APIException(status_code=403, message="Operators cannot delete campaigns")
+
+    await campaign_service.delete_campaign(
+        db=db,
+        campaign_id=campaign_id,
+        current_user=current_user,
+    )
+    return ApiResponse.success(message="Campaign deleted successfully")
+
+
 @router.get("/{campaign_id}/detail")
 async def get_campaign_detail(
     campaign_id: int,
@@ -52,6 +92,52 @@ async def get_campaign_detail(
     return ApiResponse.success(
         message="Campaign detail retrieved successfully",
         data=campaign,
+    )
+
+
+@router.get("/{campaign_id}/export/pdf")
+async def export_campaign_pdf(
+    campaign_id: int,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role == "operator":
+        raise APIException(status_code=403, message="Operators cannot export campaigns")
+
+    export = await campaign_service.export_campaign_pdf(
+        db=db,
+        campaign_id=campaign_id,
+        current_user=current_user,
+    )
+    background_tasks.add_task(export.cleanup)
+    return FileResponse(
+        path=export.path,
+        filename=export.filename,
+        media_type="application/pdf",
+    )
+
+
+@router.get("/{campaign_id}/export/csv")
+async def export_campaign_csv(
+    campaign_id: int,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role == "operator":
+        raise APIException(status_code=403, message="Operators cannot export campaigns")
+
+    export = await campaign_service.export_campaign_csv(
+        db=db,
+        campaign_id=campaign_id,
+        current_user=current_user,
+    )
+    background_tasks.add_task(export.cleanup)
+    return FileResponse(
+        path=export.path,
+        filename=export.filename,
+        media_type="text/csv",
     )
 
 

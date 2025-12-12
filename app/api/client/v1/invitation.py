@@ -8,6 +8,8 @@ from app.schemas.client.invitation import (
     InviteUserRequest,
     InvitationInfoResponse,
     RegisterFromInvitationRequest,
+    CollaboratorStatusUpdateRequest,
+    CollaboratorRoleUpdateRequest,
 )
 from app.schemas.response import ApiResponse
 from app.services.client.invitation import client_invitation_service
@@ -69,6 +71,47 @@ async def list_users(
         role_type=role_type,
     )
     return ApiResponse.success(data=collaborators)
+
+
+@router.post("/collaborators/{collaborator_id}/status")
+async def update_collaborator_status(
+    collaborator_id: int,
+    payload: CollaboratorStatusUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Activate or deactivate a collaborator within current organization."""
+
+    collaborator = await client_invitation_service.update_collaborator_status(
+        db=db,
+        current_user=current_user,
+        collaborator_id=collaborator_id,
+        payload=payload,
+    )
+    return ApiResponse.success(
+        message="Collaborator status updated successfully",
+        data=collaborator,
+    )
+
+
+@router.post("/collaborators/{collaborator_id}/role")
+async def update_collaborator_role(
+    collaborator_id: int,
+    payload: CollaboratorRoleUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Promote/demote a collaborator between admin/operator roles."""
+
+    await client_invitation_service.update_collaborator_role(
+        db=db,
+        current_user=current_user,
+        collaborator_id=collaborator_id,
+        payload=payload,
+    )
+    return ApiResponse.success(
+        data={"message": "Collaborator role updated successfully"},
+    )
 
 
 @router.post("/{invitation_id}/resend")
