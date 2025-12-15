@@ -11,8 +11,6 @@ class BaseSchema(BaseModel):
 
 class BaseResponseSchema(BaseSchema):
     id: int
-    created_at: datetime = Field(default=0)
-    updated_at: datetime = Field(default=0)
 
     def set_padded_id(self, pad_length: int = 4):
         """Set padded_id for current object"""

@@ -52,7 +52,10 @@ async def health_check():
             data=health_status
         )
 
-    return ApiResponse.success(data=health_status)
+    return ApiResponse.success(
+        message="Service healthy", # 无指定即预设模板
+        data=health_status,
+    )
 
 
 @router.get("/release")

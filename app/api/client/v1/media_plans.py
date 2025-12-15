@@ -76,3 +76,20 @@ async def list_media_plan_faces(
         message="Media plans retrieved successfully",
         data=data,
     )
+
+
+@router.get("/{media_plan_id}/detail")
+async def get_media_plan_detail(
+    media_plan_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    media_plan = await media_plan_service.get_media_plan_detail(
+        db=db,
+        media_plan_id=media_plan_id,
+        current_user=current_user,
+    )
+    return ApiResponse.success(
+        message="Media plan detail retrieved successfully",
+        data=media_plan,
+    )

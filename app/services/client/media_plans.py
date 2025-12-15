@@ -64,19 +64,20 @@ class MediaPlanService:
     ) -> MediaPlanResponse:
         campaign_data = None
         if campaign is not None:
-            campaign_data = CampaignResponse.model_validate(campaign)
+            campaign_data = CampaignResponse.model_validate(campaign).model_dump()
 
         return MediaPlanResponse(
             id=media_plan.id,
             name=media_plan.name,
             description=media_plan.description,
             budget=media_plan.budget,
+            start_date=(campaign.start_date if campaign else None),
+            end_date=(campaign.end_date if campaign else None),
+            status=(campaign.status if campaign else None),
             action=media_plan.action,
             user_id=media_plan.user_id,
             organization_id=media_plan.organization_id,
             campaign_id=media_plan.campaign_id,
-            campaign_start_date=(campaign.start_date if campaign else None),
-            campaign_end_date=(campaign.end_date if campaign else None),
             campaign=campaign_data,
             created_at=media_plan.created_at,
             updated_at=media_plan.updated_at,
@@ -161,6 +162,37 @@ class MediaPlanService:
             "has_more": page < last_page,
         }
 
+    async def get_media_plan_detail(
+        self,
+        db: AsyncSession,
+        media_plan_id: int,
+        current_user: User,
+    ) -> MediaPlanResponse:
+        result = await db.execute(
+            select(MediaPlan).where(
+                MediaPlan.id == media_plan_id,
+                MediaPlan.organization_id == current_user.organization_id,
+            )
+        )
+        media_plan = result.scalar_one_or_none()
+        if media_plan is None:
+            raise APIException(status_code=404, message="Media plan not found")
+
+        campaign: Campaign | None = None
+        if media_plan.campaign_id is not None:
+            campaign_result = await db.execute(
+                select(Campaign).where(
+                    Campaign.id == media_plan.campaign_id,
+                    Campaign.organization_id == current_user.organization_id,
+                )
+            )
+            campaign = campaign_result.scalar_one_or_none()
+
+        return self._build_response(media_plan, campaign)
+    
+    """
+    确认属于当前组织
+    """
     async def _fetch_campaign(
         self,
         db: AsyncSession,
